@@ -1,12 +1,19 @@
 # Edge-Modified — Edge Control Center
 
-**Modified & unlocked ARDOR GAMING Edge 3327 software** — the stock LYMS/OemDrv driver suite
-rebuilt into a modular, dark-themed control center for the whole platform (750 W PSU · 16 GB ·
-GPT/UEFI · Windows+Linux dual boot · PAW-3327 mouse).
+**v2.0.0 "MONOLITH" — один самодостаточный EXE: скачал → запустил → пользуешься.**
 
-The original binaries (`OemDrv.exe`, `*.dll`) ship several complete modules that are merely
-switched off in `Cfg.ini`. ECC owns the configuration plane, unlocks everything, and wraps the
-platform in a next-generation dashboard.
+```text
+dist/EdgeControlCenter-2.0.0.exe   ← ВСЁ внутри: движок + UI + стоковый Cfg.ini
+```
+
+Запуск: двойной клик → откроется консоль со статусом и панель в браузере
+(`http://127.0.0.1:3327`). Никаких зависимостей, установки и распаковок.
+Данные живут в `%APPDATA%\EdgeControlCenter` (переживают переезды EXE).
+Переменные: `PORT`, `ECC_NO_BROWSER=1`, `ECC_DATA`.
+Admin: `hasberd` / `ardor-3327` → сменить пароль при первом входе.
+
+Модифицированный софт для ARDOR GAMING Edge 3327 (750 Вт · 16 ГБ · GPT/UEFI ·
+Windows+Linux · мышь PAW-3327). Стоковые бинарники `OemDrv.exe` не тронуты.
 
 ## What's inside
 

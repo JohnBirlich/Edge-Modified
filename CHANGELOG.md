@@ -1,6 +1,37 @@
 # Changelog
 
+## v2.0.0 — "MONOLITH" (2026-11-07)
+
+**Один самодостаточный EXE: скачал → запустил → пользуешься.**
+
+### Added
+* **Single-file EXE** (`EdgeControlCenter-2.0.0.exe`, ~83 МБ): движок (Node.js 22.22.3, SEA),
+  весь UI, стоковый `Cfg.ini` и `VERSION.json` встроены в бинарник через embedded-VFS
+  (полезная нагрузка в PE-оверлее, трейлер `ECC2EMBED_V200__`).
+* **Embedded VFS + fs-шим** в загрузчике (`control-center/sea/sea-bootstrap.js`):
+  чтение модулей/статики/конфига из собственного EXE; все записи рядом с EXE
+  перенаправляются в каталог данных пользователя.
+* **Портативные данные**: `%APPDATA%\EdgeControlCenter`
+  (Linux: `~/.local/share/EdgeControlCenter`) — аудит, профили, экспорты и галерея
+  переживают перезапуски и переезды EXE.
+* Автооткрытие панели в браузере при старте (`ECC_NO_BROWSER=1` отключает).
+* Смоук-тест той же механики на хост-платформе прямо в сборке
+  (`installer/build-singlefile.sh`): state/UI/static/config из embedded-payload.
+* `tools/make-payload.py` — сборщик полезной нагрузки (индекс + оффсеты + магия).
+
+### Changed
+* Версия 2.0.0, кодовое имя MONOLITH; баннер печатает версию из встроенного манифеста.
+* Дистрибутив: `dist/EdgeControlCenter-2.0.0.exe` — один файл вместо архивов
+  (оконный лаунчер остаётся в исходниках: `launcher/edge-launcher.c`, `installer/build-app.sh`).
+
+### Verified (same mechanics, host platform)
+state/UI/static/config из embedded payload · auth + unlock · export в data-dir ·
+персистентность unlock между запусками · AI SIM job · SSE-поток.
+
+---
+
 ## v1.0.0 — "IGNITION" (2026-11-07)
+
 
 Initial release of the **Edge Control Center** for the ARDOR GAMING Edge 3327 platform.
 
