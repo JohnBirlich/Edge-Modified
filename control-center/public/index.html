@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edge Control Center — ARDOR GAMING Edge 3327</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23ff4d2e'/><text x='16' y='22' font-size='16' font-weight='800' text-anchor='middle' fill='%2314080a' font-family='sans-serif'>E</text></svg>">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<aside id="rail">
+  <div id="logo">
+    <div class="mark">E</div>
+    <div class="tt"><div class="t1">EDGE</div><div class="t2">Control Center</div></div>
+  </div>
+  <nav id="nav" aria-label="Modules"></nav>
+  <div id="railfoot">
+    <div class="row" style="padding:4px 8px"><span class="sub mono" id="ver">v—</span><span class="badge src" style="margin-left:auto" id="chan">stable</span></div>
+    <button class="btn sm" id="btn-admin" style="justify-content:center"><span>🔐 Admin — hasberd</span></button>
+  </div>
+</aside>
+
+<main id="main">
+  <header id="topbar">
+    <div id="modtitle">Overview</div>
+    <span class="badge live" id="tickbadge">LIVE ●</span>
+    <div id="top-right">
+      <span id="snapstate" title="Restore-point anchor">◆ snapshot: —</span>
+      <span id="clock" aria-live="off">--:--:--</span>
+    </div>
+  </header>
+  <div id="content">
+
+    <!-- ============ OVERVIEW ============ -->
+    <section class="panel active" id="panel-overview">
+      <div class="grid g4">
+        <div class="card"><h3>Wall draw <span class="spacer"></span><span class="badge model">MODEL</span></h3>
+          <div class="kpi" id="ov-wall">— <small>W</small></div>
+          <div class="sub" id="ov-eff">efficiency —%</div>
+          <div class="bar mt"><i id="ov-wallbar" style="width:0%"></i></div>
+          <div class="sub mt" id="ov-head">headroom —</div></div>
+        <div class="card"><h3>CPU</h3><div class="kpi" id="ov-cpu">—<small>%</small></div>
+          <canvas class="spark" id="spark-cpu" width="300" height="42"></canvas>
+          <div class="sub" id="ov-cpuinfo">—</div></div>
+        <div class="card"><h3>Memory <span class="spacer"></span><span class="sub">16 GB envelope</span></h3>
+          <div class="kpi" id="ov-mem">—<small>%</small></div>
+          <div class="bar mt"><i id="ov-membar" style="width:0%"></i></div>
+          <div class="sub" id="ov-meminfo">—</div></div>
+        <div class="card"><h3>Throttle risk <span class="spacer"></span><span class="badge live" id="ov-thermsrc">LIVE</span></h3>
+          <div class="kpi" id="ov-risk">—<small>%</small></div>
+          <div class="bar mt"><i id="ov-riskbar" style="width:0%"></i></div>
+          <div class="sub" id="ov-ttt">time-to-throttle: —</div></div>
+      </div>
+      <div class="grid g2 mt">
+        <div class="card"><h3>Edge 3327 device</h3><div id="ov-device" class="mono">loading…</div>
+          <div class="row wrap mt">
+            <button class="btn sm" data-nav="device">Open device panel</button>
+            <button class="btn sm ghost" data-nav="thermal">Thermal policy</button>
+            <button class="btn sm ghost" data-nav="network">Network suite</button>
+          </div></div>
+        <div class="card"><h3>Network I/O</h3>
+          <div class="row"><div style="flex:1"><div class="sub">RX</div><div class="kpi" style="font-size:20px" id="ov-rx">— <small>KB/s</small></div></div>
+          <div style="flex:1"><div class="sub">TX</div><div class="kpi" style="font-size:20px" id="ov-tx">— <small>KB/s</small></div></div></div>
+          <canvas class="spark" id="spark-net" width="300" height="42"></canvas></div>
+      </div>
+      <div class="card mt"><h3>Platform posture</h3><div id="ov-posture" class="grid g4">…</div></div>
+    </section>
+
+    <!-- ============ DEVICE ============ -->
+    <section class="panel" id="panel-device">
+      <div class="grid g2">
+        <div class="card">
+          <h3>Hidden module unlock bank <span class="spacer"></span><span class="badge src">config-plane</span></h3>
+          <div class="sub">Modules compiled into the stock OemDrv binary but disabled in Cfg.ini. Flip to activate — fully reversible.</div>
+          <div id="unlock-list" class="mt"></div>
+          <div class="row mt"><button class="btn acc sm" id="btn-unlock-all">Unlock all</button>
+            <button class="btn sm ghost" id="btn-lock-all">Restore factory gates</button></div>
+        </div>
+        <div class="card">
+          <h3>Device — ARDOR GAMING Edge 3327</h3>
+          <div class="row" style="gap:20px">
+            <div class="mouse-visual"><div class="wheel"></div><div class="led" id="dev-led" style="--led:#f00"></div></div>
+            <div style="flex:1" class="mono" id="dev-meta">—</div>
+          </div>
+          <div id="dev-stages" class="grid mt" style="gap:8px"></div>
+        </div>
+      </div>
+      <div class="grid g2 mt">
+        <div class="card"><h3>Tuning profiles</h3>
+          <div class="sub">Curated register patches — applied to the config plane, exported on demand.</div>
+          <div id="profile-list" class="grid g2 mt" style="gap:8px"></div>
+          <div class="row wrap mt">
+            <label class="f" style="margin:0">Debounce (DR register)</label><input type="text" id="dev-dr" class="mono" style="width:110px">
+            <label class="f" style="margin:0">Debounce mode (DM)</label><input type="number" id="dev-dm" style="width:80px">
+            <label class="f" style="margin:0">LOD (DefLOD 0–2)</label><input type="number" id="dev-lod" style="width:80px" min="0" max="2">
+            <button class="btn sm acc mt" id="btn-dev-apply">Apply registers</button>
+          </div>
+        </div>
+        <div class="card"><h3>DPI calculator &amp; export</h3>
+          <div class="row wrap">
+            <div style="flex:1;min-width:130px"><label class="f">DPI</label><input type="number" id="calc-dpi" value="800" step="50"></div>
+            <div style="flex:1;min-width:130px"><label class="f">Polling Hz</label><select id="calc-hz"><option>125</option><option>250</option><option>500</option><option selected>1000</option></select></div>
+            <button class="btn sm" id="btn-calc" style="margin-top:18px">Compute</button>
+          </div>
+          <div id="calc-out" class="mono mt">—</div>
+          <div class="row mt2">
+            <button class="btn acc" id="btn-export">Export Cfg.ini (stock-app compatible)</button>
+            <button class="btn ghost" id="btn-raw">View raw</button>
+          </div>
+          <div id="raw-box" style="display:none" class="mt"><pre class="code" id="raw-pre" style="max-height:260px"></pre></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ POWER ============ -->
+    <section class="panel" id="panel-power">
+      <div class="grid g3">
+        <div class="card"><h3>Wall draw</h3>
+          <div class="gauge" id="g-wall"><div class="v"><span id="g-wall-v">—</span><small>WATTS / 750</small></div></div>
+          <div class="sub mt" style="text-align:center" id="p-psu">—</div></div>
+        <div class="card"><h3>Efficiency</h3>
+          <div class="gauge ok" id="g-eff"><div class="v"><span id="g-eff-v">—</span><small>η %</small></div></div>
+          <div class="sub mt" style="text-align:center" id="p-sweet">—</div></div>
+        <div class="card"><h3>Rail distribution</h3><div id="p-rails" class="mono">—</div></div>
+      </div>
+      <div class="grid g2 mt">
+        <div class="card"><h3>Dynamic power limits <span class="spacer"></span><span class="badge model" id="pl-src">MODEL</span></h3>
+          <div class="row wrap">
+            <div style="flex:1;min-width:150px"><label class="f">PL1 — sustained (W)</label><input type="number" id="pl1" value="125" min="35" max="253"></div>
+            <div style="flex:1;min-width:150px"><label class="f">PL2 — boost (W)</label><input type="number" id="pl2" value="188" min="35" max="253"></div>
+          </div>
+          <div class="row mt"><button class="btn acc sm" id="btn-pl">Apply (guarded)</button><span class="sub" id="pl-note">PL2 ≤ 1.5×PL1 ≤ platform max · tau 28 s</span></div>
+          <div class="note mt" id="pl-result">Envelope reference: 125 W sustained / 188 W boost on the 750 W Gold unit keeps wall draw inside the 40–60 % efficiency sweet spot.</div>
+        </div>
+        <div class="card"><h3>Energy economics</h3>
+          <div class="row"><div style="flex:1"><label class="f">Electricity price (€/kWh)</label><input type="number" id="price" value="0.28" step="0.01" min="0" max="2"></div>
+            <button class="btn sm" id="btn-price" style="margin-top:19px">Set</button></div>
+          <div class="grid g2 mt"><div class="kpi" id="p-week">— <small>€/week @24/7</small></div><div class="kpi" id="p-month">— <small>€/month</small></div></div>
+          <div class="sub mt" id="p-cost-note">Assumes continuous operation; gaming duty-cycles run lower.</div>
+          <h3 class="mt2">Wall draw history</h3><canvas class="chart" id="chart-wall" width="420" height="130"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MEMORY ============ -->
+    <section class="panel" id="panel-memory">
+      <div class="grid g2">
+        <div class="card"><h3>Memory profile — 16 GB envelope <span class="badge src" id="mem-src">—</span></h3>
+          <div id="mem-dimms">…</div>
+          <div class="note blue mt" id="mem-xmp-note">—</div>
+        </div>
+        <div class="card"><h3>Live pressure</h3><div id="mem-live" class="mono">—</div>
+          <h3 class="mt2">Swap / paging advice</h3><div id="mem-swap" class="sub">—</div>
+        </div>
+      </div>
+      <div class="card mt"><h3>Latency &amp; paging tunables (kernel)</h3>
+        <div class="grid g4" id="mem-vm">…</div>
+        <div class="row wrap mt">
+          <button class="btn sm acc" data-vm-preset="gaming">Preset: Gaming</button>
+          <button class="btn sm" data-vm-preset="balanced">Preset: Balanced</button>
+          <button class="btn sm" data-vm-preset="compile">Preset: Compile</button>
+          <span class="sub">Presets write live sysctls when privileged; otherwise staged (SIM badge) for the elevated agent.</span>
+        </div>
+        <div class="grid g4 mt" id="mem-vm-edit">…</div>
+      </div>
+    </section>
+
+    <!-- ============ STORAGE ============ -->
+    <section class="panel" id="panel-storage">
+      <div class="grid g2">
+        <div class="card"><h3>Block devices — GPT architecture <span class="badge src" id="sto-src">—</span></h3><div id="sto-tree">…</div></div>
+        <div class="card"><h3>UEFI / Secure Boot</h3><div id="sto-efi" class="mono">—</div>
+          <h3 class="mt2">Cross-platform mount planner</h3>
+          <div class="row"><input type="text" id="mnt-dev" placeholder="/dev/sda3 or /dev/nvme0n1p4" class="mono"><button class="btn sm acc" id="btn-mnt">Generate plan</button></div>
+          <pre class="code mt" id="mnt-out" style="display:none"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ NETWORK ============ -->
+    <section class="panel" id="panel-network">
+      <div class="grid g4">
+        <div class="card"><h3>Ping</h3><input type="text" id="ping-host" value="1.1.1.1"><div class="row mt"><input type="number" id="ping-n" value="10" min="1" max="20" style="width:70px"><button class="btn sm acc" id="btn-ping">Probe</button></div><div id="ping-out" class="mt mono">—</div></div>
+        <div class="card"><h3>DNS matrix</h3><input type="text" id="dns-host" value="example.com"><button class="btn sm acc mt" id="btn-dns">Race resolvers</button><div id="dns-out" class="mt mono">—</div></div>
+        <div class="card"><h3>TCP / HTTP</h3>
+          <div class="row"><input type="text" id="tcp-host" value="1.1.1.1" class="mono" style="flex:1"><input type="number" id="tcp-port" value="443" style="width:80px"><button class="btn sm" id="btn-tcp">TCP</button></div>
+          <div class="row mt"><input type="text" id="http-url" value="https://example.com" style="flex:1"><button class="btn sm" id="btn-http">TTFB</button></div>
+          <div id="tcp-out" class="mt mono">—</div></div>
+        <div class="card"><h3>Bufferbloat</h3><input type="text" id="bb-host" value="1.1.1.1"><button class="btn sm acc mt" id="btn-bb">Grade queue</button><div id="bb-out" class="mt mono">—</div></div>
+      </div>
+      <div class="grid g2 mt">
+        <div class="card"><h3>Flow inspector <span class="spacer"></span><span class="badge src">DPI-lite</span></h3><div id="net-flows">…</div></div>
+        <div class="card"><h3>Packet prioritization (QoS)</h3>
+          <div class="row wrap" id="qos-btns"></div>
+          <pre class="code mt" id="qos-out" style="display:none;max-height:280px"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ BRIDGE ============ -->
+    <section class="panel" id="panel-bridge">
+      <div class="grid g2">
+        <div class="card"><h3>EBP/1.0 — Edge Bridge Protocol</h3>
+          <div id="br-meta" class="mono">—</div>
+          <div class="row mt"><button class="btn acc sm" id="btn-pair">Issue pairing code</button><span class="mono" id="pair-code" style="font-size:22px;font-weight:800;color:var(--acc2)">——</span></div>
+          <div class="note mt">On the other OS run: <span class="kbd">python3 agent/edge-agent.py pair &lt;this-host&gt;:3327</span> — discovery beacon on UDP 33270, then token pairing. Spec: docs/PROTOCOL.md.</div>
+        </div>
+        <div class="card"><h3>Paired peers</h3><div id="br-peers">…</div>
+          <h3 class="mt2">Capabilities matrix</h3>
+          <div class="sub">file.share (4 MiB chunks, SHA-256, resume) · periph.apply (Cfg schema) · telemetry.mirror (PEER badge) · exec.allow (whitelisted verbs)</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ STABILITY ============ -->
+    <section class="panel" id="panel-stability">
+      <div class="grid g2">
+        <div class="card"><h3>Crash analyzer</h3>
+          <label class="f">Paste stop code, BSOD text, or base64 minidump (.dmp)</label>
+          <textarea id="stab-in" placeholder="e.g. 0x124 WHEA_UNCORRECTABLE_ERROR — or the whole event text"></textarea>
+          <div class="row mt"><button class="btn acc sm" id="btn-stab">Analyze</button><button class="btn sm" id="btn-recover">Recovery bundle</button></div>
+          <div id="stab-out" class="mt">—</div>
+        </div>
+        <div class="card"><h3>Kernel error watch <span class="badge src" id="kern-src">—</span></h3><div id="kern-out" class="mono">—</div>
+          <h3 class="mt2">Incident log</h3><div id="inc-out" class="mono">—</div>
+        </div>
+      </div>
+      <div class="card mt"><h3>Bugcheck knowledge base</h3><div class="row wrap" id="kb-list"></div></div>
+    </section>
+
+    <!-- ============ AI STUDIO ============ -->
+    <section class="panel" id="panel-ai">
+      <div class="grid g2">
+        <div class="card"><h3>Forge Studio — local generation <span class="badge sim" id="ai-badge">detecting…</span></h3>
+          <div class="sub" id="ai-backend">—</div>
+          <label class="f">Prompt</label><textarea id="ai-prompt" style="min-height:56px">ember nebula over a matte black gaming rig, volumetric light, high detail</textarea>
+          <div class="grid g4" style="gap:10px">
+            <div><label class="f">Steps</label><input type="number" id="ai-steps" value="28" min="1" max="150"></div>
+            <div><label class="f">CFG</label><input type="number" id="ai-cfg" value="7" step="0.5" min="1" max="30"></div>
+            <div><label class="f">Size</label><select id="ai-size"><option>512x512</option><option selected>768x768</option><option>1024x768</option><option>768x1024</option><option>1024x1024</option></select></div>
+            <div><label class="f">Seed</label><input type="number" id="ai-seed" placeholder="random"></div>
+          </div>
+          <label class="f">Negative prompt (backend-supported)</label><input type="text" id="ai-neg" value="lowres, jpeg artifacts">
+          <div class="row mt"><button class="btn acc" id="btn-ai-gen">Generate locally</button><span class="sub" id="ai-guard"></span></div>
+          <div class="note mt">Runs entirely on this machine via local ComfyUI / A1111 backends — no cloud egress, no telemetry. Output is governed by the models you install and the law; ECC adds no provider filters and ships no bypass tooling. Without a backend, the deterministic SIM renderer keeps the pipeline testable (badged SIM).</div>
+        </div>
+        <div class="card"><h3>Queue</h3><div id="ai-queue">—</div>
+          <h3 class="mt2">Backend endpoints (admin)</h3>
+          <div class="row"><input type="text" id="ai-comfy" class="mono" style="flex:1" placeholder="ComfyUI http://127.0.0.1:8188"><input type="text" id="ai-a1111" class="mono" style="flex:1" placeholder="A1111 http://127.0.0.1:7860"><button class="btn sm" id="btn-ai-be">Save</button></div>
+        </div>
+      </div>
+      <div class="card mt"><h3>Gallery</h3><div class="gallery" id="ai-gallery">—</div></div>
+    </section>
+
+    <!-- ============ THERMAL ============ -->
+    <section class="panel" id="panel-thermal">
+      <div class="grid g3">
+        <div class="card"><h3>CPU package</h3><div class="kpi" id="th-cpu">—°<small id="th-cpu-src"></small></div><canvas class="chart" id="chart-tcpu" width="380" height="130"></canvas>
+          <div class="sub mt" id="th-cpu-pred">forecast —° @60 s</div></div>
+        <div class="card"><h3>GPU</h3><div class="kpi" id="th-gpu">—°</div><canvas class="chart" id="chart-tgpu" width="380" height="130"></canvas>
+          <div class="sub mt" id="th-gpu-pred">forecast —° @60 s</div></div>
+        <div class="card"><h3>Predictive controller</h3>
+          <div class="row wrap"><select id="th-mode" style="flex:1"><option value="adaptive">Adaptive (AI class policy)</option><option value="acoustic">Acoustic target</option><option value="manual">Manual curve</option></select></div>
+          <div class="row mt"><div style="flex:1"><label class="f">Acoustic target dBA</label><input type="number" id="th-dba" value="32" min="20" max="45"></div>
+            <div style="flex:1"><label class="f">Detected load class</label><input type="text" id="th-class" disabled value="—"></div></div>
+          <label class="f">Fan curve (5 points °C → %PWM)</label><div class="grid g5" style="gap:6px" id="th-curve"></div>
+          <div class="grid g3 mt" style="gap:6px">
+            <div><label class="f">CPU ceiling</label><input type="number" id="th-ceil-cpu" value="95" min="60" max="110"></div>
+            <div><label class="f">GPU ceiling</label><input type="number" id="th-ceil-gpu" value="83" min="60" max="110"></div>
+            <div style="align-self:end"><button class="btn acc sm" style="width:100%" id="btn-th-apply">Apply policy</button></div>
+          </div>
+          <div class="sub mt">PWM dispatched via nbfc-linux (Linux) / EC agent (Windows). PL bias stays inside the Power panel envelope.</div>
+        </div>
+      </div>
+      <div class="card mt"><h3>Throttle timeline — time-to-throttle vs ceilings</h3>
+        <div class="grid g3"><div id="th-ttt-cpu" class="mono">CPU: —</div><div id="th-ttt-gpu" class="mono">GPU: —</div><div id="th-risk" class="mono">Risk: —</div></div>
+      </div>
+    </section>
+
+    <!-- ============ ADMIN ============ -->
+    <section class="panel" id="panel-admin">
+      <div class="grid g2">
+        <div class="card" id="admin-login-card">
+          <h3>Administrator — hasberd</h3>
+          <div class="login-box">
+            <label class="f">User</label><input type="text" id="au" value="hasberd">
+            <label class="f">Passphrase</label><input type="password" id="ap" placeholder="••••••••">
+            <div class="row mt"><button class="btn acc" id="btn-login" style="flex:1;justify-content:center">Elevate</button></div>
+            <div class="locked-note">default passphrase: <span class="kbd">ardor-3327</span> — rotate after first login</div>
+          </div>
+        </div>
+        <div class="card" id="admin-main" style="display:none">
+          <div class="row"><h3 style="margin:0">Elevated session <span class="badge ok">ADMIN</span></h3>
+            <button class="btn sm ghost" id="btn-logout" style="margin-left:auto">De-elevate</button></div>
+          <div class="grid g3 mt">
+            <button class="btn sm" id="btn-snap">◆ Create restore anchor</button>
+            <button class="btn sm" id="btn-audit">View audit journal</button>
+            <button class="btn sm" id="btn-rotate">Rotate passphrase</button>
+          </div>
+          <h3 class="mt2">Macro scripting (dry-run sandbox)</h3>
+          <div class="row"><input type="text" id="mac-name" placeholder="macro name" style="flex:1"><button class="btn sm acc" id="btn-mac-add">Add</button></div>
+          <textarea id="mac-script" class="mt" placeholder="# whitelisted verbs only; destructive patterns refused&#10;set dpi 800; set debounce 0x300; thermal adaptive"></textarea>
+          <div id="mac-list" class="mt"></div>
+          <div id="audit-box" style="display:none" class="mt"><pre class="code" id="audit-pre" style="max-height:220px"></pre></div>
+        </div>
+      </div>
+      <div class="card mt"><h3>System / privileged paths</h3><div id="admin-sys" class="mono">elevate to view</div></div>
+    </section>
+
+  </div>
+</main>
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+<script src="js/app.js" type="module"></script>
+</body>
+</html>

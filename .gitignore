@@ -1,0 +1,7 @@
+# ECC runtime state — never commit secrets or generated state
+control-center/data/
+profiles/runtime.ini
+profiles/Edge3327_*.ini
+node_modules/
+*.log
+/var/tmp/
