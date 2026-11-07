@@ -260,11 +260,13 @@ if (!fs.existsSync(serverEntry)) {
 process.argv[1] = serverEntry;
 try {
   loadModule(serverEntry, true);
-} catch (e) {
-  console.error('✗ fatal:', (e && e.stack) || e);
-  if (process.platform === 'win32') { try { exec('pause'); } catch { } }
-  process.exit(1);
-}
+  } catch (e) {
+    console.error('✗ fatal:', (e && e.stack) || e);
+    // persist for the native host / operator (fs shim redirects to the data dir)
+    try { fs.writeFileSync(path.join(EXE_DIR, 'engine-error.log'), new Date().toISOString() + ' fatal: ' + ((e && e.stack) || e) + '\n', { flag: 'a' }); } catch { }
+    if (process.platform === 'win32') { try { exec('pause'); } catch { } }
+    process.exit(1);
+  }
 
 // Auto-open the operator UI once the server had a moment to bind
 if (process.platform === 'win32' && !process.env.ECC_NO_BROWSER) {

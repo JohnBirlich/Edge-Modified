@@ -32,8 +32,8 @@ Resource.IconGroupEntry.replaceIconsForResource(res.entries, 1, 1033, ico.icons.
 const vi = Resource.VersionInfo.createEmpty();
 const S = (k, v) => vi.setStringValue({ lang: 1033, codePage: 1200 }, k, v);
 S('ProductName', 'Edge Control Center');
-S('FileDescription', 'EDGE Control Center - native Win32 app for ARDOR GAMING Edge 3327');
-S('FileVersion', '2.1.0.0'); S('ProductVersion', '2.1.0.0');
+S('FileDescription', 'EDGE Control Center - native Win32 app for ARDOR GAMING Edge 3327 (v2.1.1)');
+S('FileVersion', '2.1.1.0'); S('ProductVersion', '2.1.1.0');
 S('CompanyName', 'hasberd / ARDOR GAMING mod');
 S('LegalCopyright', '(c) 2026 hasberd');
 S('OriginalFilename', 'EdgeControlCenter.exe');
@@ -62,12 +62,12 @@ python3 "$ROOT/tools/make-payload.py" "$STAGE/ecc-engine.exe" "$STAGE/ecc-engine
   --root "$B" $(find "$B" -type f | sort)
 
 echo "[5/6] Native app + engine blob → single exe"
-python3 "$ROOT/tools/make-payload.py" "$STAGE/app.exe" "$STAGE/EdgeControlCenter-2.1.0.exe" \
+python3 "$ROOT/tools/make-payload.py" "$STAGE/app.exe" "$STAGE/EdgeControlCenter-2.1.1.exe" \
   --native "$STAGE/ecc-engine.exe"
 
 echo "[6/6] Ship"
 mkdir -p "$OUT"
-cp "$STAGE/EdgeControlCenter-2.1.0.exe" "$OUT/"
-echo "✓ $OUT/EdgeControlCenter-2.1.0.exe"
+cp "$STAGE/EdgeControlCenter-2.1.1.exe" "$OUT/"
+echo "✓ $OUT/EdgeControlCenter-2.1.1.exe"
 echo "  Layout: [native GUI][engine blob][u64 len][ECCNATIVE1]"
 echo "  First run extracts engine → %LOCALAPPDATA%\\EdgeControlCenter\\ecc-engine.exe (hidden)"

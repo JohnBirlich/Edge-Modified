@@ -89,7 +89,12 @@ static int g_page = PG_OVERVIEW;
 static volatile BOOL g_engineReady = FALSE, g_engineDead = FALSE, g_extracting = TRUE;
 static wchar_t g_status[256] = L"Инициализация…";
 static wchar_t g_enginePath[MAX_PATH];
+static wchar_t g_engineDir[MAX_PATH];
+static wchar_t g_engineLog[MAX_PATH];
 static HANDLE g_hEngine = NULL;
+static DWORD g_engineExit = 0xFFFFFFFF;
+static int g_restartTries = 0;
+static RECT g_rRestart, g_rLogBtn, g_rFoldBtn;
 static int g_port = 3327;
 static wchar_t g_token[96];
 static wchar_t g_user[40] = L"hasberd";
@@ -181,48 +186,150 @@ static BOOL ExtractEngine(void) {
   if (fread(tail, 1, 18, f) != 18 || memcmp(tail + 8, "ECCNATIVE1", 10) != 0) { fclose(f); return FALSE; }
   unsigned long long blen = 0;
   for (int i = 0; i < 8; i++) blen |= (unsigned long long)tail[i] << (8 * i);
-  wchar_t base[MAX_PATH];
-  if (FAILED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, base))) { fclose(f); return FALSE; }
-  CreateDirectoryW(base, NULL);
-  wchar_t dir[MAX_PATH];
-  _snwprintf(dir, MAX_PATH - 1, L"%s\\EdgeControlCenter", base);
-  CreateDirectoryW(dir, NULL);
-  _snwprintf(g_enginePath, MAX_PATH - 1, L"%s\\ecc-engine.exe", dir);
+  /* reuse existing engine if the size matches exactly */
+  WIN32_FILE_ATTRIBUTE_DATA fa;
+  if (GetFileAttributesExW(g_enginePath, GetFileExInfoStandard, &fa)) {
+    unsigned long long sz = ((unsigned long long)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
+    if (sz == blen) {
+      fclose(f);
+      SetStatusW(L"Движок уже распакован — запускаю…");
+      return TRUE;
+    }
+  }
+  _fseeki64(f, -(long long)(18 + (long long)blen), SEEK_END);
   FILE *o = _wfopen(g_enginePath, L"wb");
+  if (!o) { DeleteFileW(g_enginePath); o = _wfopen(g_enginePath, L"wb"); }
   if (!o) { fclose(f); return FALSE; }
   char *chunk = (char *)malloc(1 << 20);
-  unsigned long long left = blen;
+  unsigned long long left = blen, done = 0;
+  int lastpct = -1;
   while (left) {
     unsigned long long want = left > (1 << 20) ? (1 << 20) : left;
-    if (fread(chunk, 1, (size_t)want, f) != want) break;
-    if (fwrite(chunk, 1, (size_t)want, o) != want) break;
-    left -= want;
+    if (fread(chunk, 1, (size_t)want, f) != (size_t)want) break;
+    if (fwrite(chunk, 1, (size_t)want, o) != (size_t)want) break;
+    left -= want; done += want;
+    int pct = (int)(done * 100 / blen);
+    if (pct != lastpct) {
+      lastpct = pct;
+      wchar_t pm[64]; _snwprintf(pm, 63, L"Распаковка движка… %d%%", pct);
+      SetStatusW(pm);
+    }
   }
   free(chunk);
   fclose(o); fclose(f);
-  return left == 0;
+  if (left) { DeleteFileW(g_enginePath); return FALSE; }
+  return TRUE;
 }
+
+static int FindFreePort(void) {
+  if (!NetInit()) return g_port;
+  SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+  if (s == INVALID_SOCKET) return g_port;
+  struct sockaddr_in a; memset(&a, 0, sizeof a);
+  a.sin_family = AF_INET; a.sin_port = 0;
+  inet_pton(AF_INET, "127.0.0.1", &a.sin_addr);
+  int port = g_port, len = sizeof a;
+  if (bind(s, (struct sockaddr *)&a, sizeof a) == 0 &&
+      listen(s, 1) == 0 &&
+      getsockname(s, (struct sockaddr *)&a, &len) == 0) port = ntohs(a.sin_port);
+  closesocket(s);
+  return port;
+}
+
 static void StartEngine(void) {
-  STARTUPINFOW si; PROCESS_INFORMATION pi;
-  memset(&si, 0, sizeof si); si.cb = sizeof si;
-  memset(&pi, 0, sizeof pi);
+  NetInit();
   wchar_t cmd[MAX_PATH + 4], cwd[MAX_PATH];
   _snwprintf(cmd, MAX_PATH + 3, L"\"%s\"", g_enginePath);
   lstrcpynW(cwd, g_enginePath, MAX_PATH);
   wchar_t *sl2 = wcsrchr(cwd, L'\\'); if (sl2) *sl2 = 0;
-  if (!CreateProcessW(g_enginePath, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, cwd, &si, &pi)) {
+  /* stdout/stderr → engine.log (append), inherited handle */
+  SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
+  HANDLE logh = CreateFileW(g_engineLog, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  STARTUPINFOW si; PROCESS_INFORMATION pi;
+  memset(&si, 0, sizeof si); si.cb = sizeof si;
+  si.dwFlags = STARTF_USESTDHANDLES;
+  si.hStdOutput = logh; si.hStdError = logh; si.hStdInput = NULL;
+  memset(&pi, 0, sizeof pi);
+  /* env block: PORT=<freed port>, double-null terminated */
+  wchar_t env[64];
+  int eo = _snwprintf(env, 60, L"PORT=%d", g_port);
+  env[eo + 1] = 0;
+  if (!CreateProcessW(g_enginePath, cmd, NULL, NULL, TRUE,
+                      CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, &si, &pi)) {
+    DWORD err = GetLastError();
+    if (logh) CloseHandle(logh);
     g_engineDead = TRUE;
-    SetStatusW(L"✗ движок не запустился (антивирус? права?) — попробуй Start-ECC.cmd");
+    wchar_t msg[220];
+    _snwprintf(msg, 219, L"✗ запуск движка заблокирован (ошибка %lu). Антивирус? Кнопки диагностики ниже.", (unsigned long)err);
+    SetStatusW(msg);
     return;
   }
+  if (logh) CloseHandle(logh);
   g_hEngine = pi.hProcess;
   CloseHandle(pi.hThread);
   SetStatusW(L"Движок запущен — ожидаю готовности…");
 }
+
+static void ReadLogTail(wchar_t *out, int cch) {
+  out[0] = 0;
+  if (!g_engineLog[0]) return;
+  HANDLE f = CreateFileW(g_engineLog, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                         NULL, OPEN_EXISTING, 0, NULL);
+  if (f == INVALID_HANDLE_VALUE) {
+    lstrcpynW(out, L"(журнала ещё нет — процесс не стартовал либо сразу заблокирован антивирусом)", cch);
+    return;
+  }
+  LARGE_INTEGER sz;
+  if (!GetFileSizeEx(f, &sz)) { CloseHandle(f); return; }
+  long long back = sz.QuadPart > 3000 ? 3000 : sz.QuadPart;
+  char *buf = (char *)malloc((size_t)back + 1);
+  DWORD rd = 0;
+  SetFilePointer(f, (LONG)-back, NULL, FILE_END);
+  ReadFile(f, buf, (DWORD)back, &rd, NULL);
+  CloseHandle(f);
+  buf[rd] = 0;
+  int w = MultiByteToWideChar(CP_UTF8, 0, buf, (int)rd, out, cch - 1);
+  out[w > 0 ? w : 0] = 0;
+  free(buf);
+  /* keep only the last 8 lines */
+  int lines = 0, len = lstrlenW(out), start = 0;
+  for (int i = len - 1; i >= 0; i--)
+    if (out[i] == L'\n' && ++lines == 8) { start = i + 1; break; }
+  if (start > 0) { memmove(out, out + start, (len - start + 1) * sizeof(wchar_t)); }
+}
+
+static void PrepareEnginePaths(void) {
+  wchar_t base[MAX_PATH];
+  if (FAILED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, base))) {
+    GetTempPathW(MAX_PATH, base);
+    int l2 = lstrlenW(base);
+    if (l2 && base[l2 - 1] == L'\\') base[l2 - 1] = 0;
+  }
+  CreateDirectoryW(base, NULL);
+  _snwprintf(g_engineDir, MAX_PATH - 1, L"%s\\EdgeControlCenter", base);
+  CreateDirectoryW(g_engineDir, NULL);
+  _snwprintf(g_enginePath, MAX_PATH - 1, L"%s\\ecc-engine.exe", g_engineDir);
+  _snwprintf(g_engineLog, MAX_PATH - 1, L"%s\\engine.log", g_engineDir);
+}
+
 static DWORD WINAPI EngineBootThread(LPVOID) {
-  SetStatusW(L"Распаковка движка (первый запуск)…");
-  if (ExtractEngine()) StartEngine();
-  else { g_engineDead = TRUE; SetStatusW(L"✗ встроенный движок не найден в EXE — файл повреждён?"); }
+  PrepareEnginePaths();
+  NetInit();
+  /* adopt an already-running engine (e.g. from a previous crashed session) */
+  if (ProbeReady()) {
+    g_engineReady = TRUE; g_extracting = FALSE;
+    SetStatusW(L"✓ найден уже работающий движок — подключён");
+    return 0;
+  }
+  SetStatusW(L"Распаковка движка…");
+  if (ExtractEngine()) {
+    g_port = FindFreePort();
+    StartEngine();
+  } else {
+    g_engineDead = TRUE;
+    SetStatusW(L"✗ не удалось распаковать движок (диск/антивирус?) — кнопки диагностики ниже");
+  }
   g_extracting = FALSE;
   return 0;
 }
@@ -558,14 +665,48 @@ static void DrawToggle(HDC dc, Toggle *t) {
 static void PaintContent(HDC dc) {
   EccState st = SnapState();
   wchar_t b[512];
+  /* all content coords are CX0/CY0-relative — offset the viewport once */
+  POINT oldOrg;
+  SetViewportOrgEx(dc, CX0, CY0, &oldOrg);
   if (!g_engineReady) {
-    DrawCard(dc, 30, 40, CWW - 60, 230, NULL);
-    TextOutF(dc, 60, 84, g_extracting ? L"Распаковка движка (первый запуск, ~2 c)…" :
-             g_engineDead ? L"✗ Движок не смог запуститься — см. статус внизу" : L"Запуск движка…",
+    DrawCard(dc, 30, 40, CWW - 60, 360, NULL);
+    TextOutF(dc, 60, 78, g_extracting ? L"Распаковка движка (первый запуск, ~2 c)…" :
+             g_engineDead ? L"✗ Движок не смог запуститься — диагностика ниже" : L"Запуск движка…",
              g_engineDead ? C_BAD : C_TEXT, g_fH2);
-    TextOutF(dc, 60, 128, L"Это нативное приложение: весь интерфейс отрисован через Win32/GDI, без браузера.", C_MUT, g_fBody);
-    TextOutF(dc, 60, 152, L"Движок — встроенный в EXE сервер телеметрии: невидим, стартует автоматически.", C_MUT, g_fBody);
-    TextOutF(dc, 60, 196, L"Статус виден в строке внизу окна.", C_MUT, g_fSmall);
+    TextOutF(dc, 60, 122, L"Это нативное приложение: интерфейс отрисован через Win32/GDI, без браузера.", C_MUT, g_fBody);
+    TextOutF(dc, 60, 146, L"Движок — встроенный в EXE сервер телеметрии (скрытый процесс).", C_MUT, g_fBody);
+    /* engine output tail */
+    TextOutF(dc, 60, 186, L"Журнал движка (последние строки):", C_MUT, g_fSmall);
+    wchar_t tail[2048];
+    ReadLogTail(tail, 2047);
+    int y = 208;
+    wchar_t *ctx = NULL, *line = wcstok(tail, L"\n", &ctx);
+    while (line && y < 372) {
+      TextOutF(dc, 60, y, line, C_INFO, g_fMono);
+      y += 20;
+      line = wcstok(NULL, L"\n", &ctx);
+    }
+    /* recovery buttons when dead */
+    if (g_engineDead) {
+      g_rRestart.left = 60; g_rRestart.top = 440; g_rRestart.right = 280; g_rRestart.bottom = 474;
+      g_rLogBtn.left = 300; g_rLogBtn.top = 440; g_rLogBtn.right = 480; g_rLogBtn.bottom = 474;
+      g_rFoldBtn.left = 500; g_rFoldBtn.top = 440; g_rFoldBtn.right = 680; g_rFoldBtn.bottom = 474;
+      RECT *btns[3] = { &g_rRestart, &g_rLogBtn, &g_rFoldBtn };
+      const wchar_t *lbl[3] = { L"↻ Перезапустить движок", L"Журнал (блокнот)", L"Открыть папку" };
+      BOOL acc[3] = { TRUE, FALSE, FALSE };
+      for (int i = 0; i < 3; i++) {
+        RECT rr = *btns[i];
+        FillR(dc, rr.left, rr.top, rr.right - rr.left, rr.bottom - rr.top, acc[i] ? RGB(206, 54, 34) : C_PANEL2);
+        HBRUSH lb = CreateSolidBrush(acc[i] ? RGB(255, 120, 60) : C_LINE);
+        FrameRect(dc, &rr, lb); DeleteObject(lb);
+        TextOutF(dc, rr.left + 14, rr.top + 7, lbl[i], acc[i] ? RGB(255, 244, 240) : C_TEXT, g_fBody);
+      }
+      /* hit rects must be absolute for mouse handling */
+      g_rRestart.left += CX0; g_rRestart.right += CX0; g_rRestart.top += CY0; g_rRestart.bottom += CY0;
+      g_rLogBtn.left += CX0; g_rLogBtn.right += CX0; g_rLogBtn.top += CY0; g_rLogBtn.bottom += CY0;
+      g_rFoldBtn.left += CX0; g_rFoldBtn.right += CX0; g_rFoldBtn.top += CY0; g_rFoldBtn.bottom += CY0;
+    }
+    SetViewportOrgEx(dc, oldOrg.x, oldOrg.y, NULL);
     return;
   }
   switch (g_page) {
@@ -598,10 +739,10 @@ static void PaintContent(HDC dc) {
     DrawBar(dc, 890, cy + 106, 220, 8, st.riskPct / 100.0, st.riskPct > 60 ? C_BAD : C_OK);
     int cy2 = cy + 168;
     DrawCard(dc, 30, cy2, 545, 200, L"СТЕНА, Вт — история");
-    RECT r1 = { 42 + CX0 - 16, cy2 + 28, 563 + CX0 - 16, cy2 + 190 };
+    RECT r1 = { 42, cy2 + 28, 545, cy2 + 190 };
     DrawSpark(dc, r1, g_hWall, g_hn, C_ACC, 0);
     DrawCard(dc, 595, cy2, 545, 200, L"CPU, °C — история");
-    RECT r2 = { 607 + CX0 - 16, cy2 + 28, 1128 + CX0 - 16, cy2 + 190 };
+    RECT r2 = { 607, cy2 + 28, 1110, cy2 + 190 };
     DrawSpark(dc, r2, g_hTemp, g_hn, C_ACC2, 100);
     int cy3 = cy2 + 216;
     DrawCard(dc, 30, cy3, CWW - 60, 110, L"УСТРОЙСТВО ARDOR EDGE 3327");
@@ -700,6 +841,7 @@ static void PaintContent(HDC dc) {
   }
   if (g_page == PG_POWER) { DrawSlider(dc, &g_sl[0]); DrawSlider(dc, &g_sl[1]); }
   if (g_page == PG_THERMAL) DrawSlider(dc, &g_sl[2]);
+  SetViewportOrgEx(dc, oldOrg.x, oldOrg.y, NULL);
 }
 static void PaintRail(HDC dc) {
   FillR(dc, 0, 0, RAIL_W, CH, C_PANEL);
@@ -730,7 +872,7 @@ static void PaintRail(HDC dc) {
     DrawTextW(dc, PAGEICONS[i], -1, &ik, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     TextOutF(dc, g_railR[i].left + 44, g_railR[i].top + 10, PAGENAMES[i], act ? C_TEXT : C_MUT, g_fRail);
   }
-  TextOutF(dc, 14, CH - 170, L"v2.1.0 «NATIVE»", C_MUT, g_fSmall);
+  TextOutF(dc, 14, CH - 170, L"v2.1.1 «NATIVE»", C_MUT, g_fSmall);
   TextOutF(dc, 14, CH - 150, L"нативный UI · Win32/GDI", C_MUT, g_fSmall);
   TextOutF(dc, 14, CH - 108, L"hasberd · ARDOR GAMING", C_MUT, g_fSmall);
   TextOutF(dc, 14, CH - 92, L"Edge 3327 suite", C_MUT, g_fSmall);
@@ -769,6 +911,23 @@ static void ApplyDpiFromEdit(void) {
 }
 static void HitTestCustom(int x, int y) {
   POINT pt = { x, y };
+  /* recovery buttons on the engine-failure card (available even when dead) */
+  if (g_engineDead) {
+    if (PtInRect(&g_rRestart, pt) || PtInRect(&g_rLogBtn, pt) || PtInRect(&g_rFoldBtn, pt)) {
+      if (PtInRect(&g_rRestart, pt)) {
+        g_engineDead = FALSE; g_restartTries = 0; g_engineExit = 0xFFFFFFFF;
+        PrepareEnginePaths();
+        if (!ProbeReady()) g_port = FindFreePort();
+        StartEngine();
+        InvalidateRect(g_hWnd, NULL, TRUE);
+      } else if (PtInRect(&g_rLogBtn, pt)) {
+        ShellExecuteW(g_hWnd, L"open", L"notepad.exe", g_engineLog, NULL, SW_SHOWNORMAL);
+      } else {
+        ShellExecuteW(g_hWnd, L"open", g_engineDir, NULL, NULL, SW_SHOWNORMAL);
+      }
+      return;
+    }
+  }
   if (PtInRect(&g_webBtnR, pt)) {
     wchar_t url[64]; _snwprintf(url, 63, L"http://127.0.0.1:%d/", g_port);
     ShellExecuteW(g_hWnd, L"open", url, NULL, NULL, SW_SHOWNORMAL);
@@ -857,16 +1016,33 @@ static LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     g_nid.cbSize = sizeof g_nid; g_nid.hWnd = h; g_nid.uID = 1;
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAY; g_nid.hIcon = g_hIcon;
-    lstrcpynW(g_nid.szTip, L"Edge Control Center — NATIVE v2.1.0", 128);
+    lstrcpynW(g_nid.szTip, L"Edge Control Center — NATIVE v2.1.1", 128);
     Shell_NotifyIconW(NIM_ADD, &g_nid);
     SetTimer(h, 1, 1000, NULL);
     return 0;
   }
   case WM_TIMER:
-    if (g_hEngine && !g_engineDead && WaitForSingleObject(g_hEngine, 0) == WAIT_OBJECT_0) {
-      g_engineDead = TRUE; g_engineReady = FALSE;
-      SetStatusW(L"✗ движок завершился — запусти приложение заново");
-      InvalidateRect(h, NULL, TRUE);
+    if (g_hEngine && WaitForSingleObject(g_hEngine, 0) == WAIT_OBJECT_0) {
+      DWORD code = 0;
+      GetExitCodeProcess(g_hEngine, &code);
+      CloseHandle(g_hEngine); g_hEngine = NULL;
+      g_engineExit = code;
+      BOOL wasReady = g_engineReady;
+      g_engineReady = FALSE;
+      if (wasReady && g_restartTries < 1) {
+        g_restartTries++;
+        SetStatusW(L"Движок завершился — автоматически перезапускаю…");
+        wchar_t pm[96];
+        _snwprintf(pm, 95, L"Движок завершился (код 0x%08X) — перезапускаю…", code);
+        SetStatusW(pm);
+        StartEngine();
+      } else {
+        g_engineDead = TRUE;
+        wchar_t msg[220];
+        _snwprintf(msg, 219, L"✗ движок завершился (код 0x%08X) — журнал и кнопки на экране", code);
+        SetStatusW(msg);
+        InvalidateRect(h, NULL, TRUE);
+      }
     }
     return 0;
   case WM_TICK:

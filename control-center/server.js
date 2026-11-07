@@ -531,6 +531,35 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) {
-  server.listen(PORT, '0.0.0.0', () => console.log(`[ECC] Edge Control Center v${VERSION.version} on :${PORT}`));
+  // Bind with retry: if the port is taken (e.g. a lingering engine instance),
+  // walk up to +20 ports so the host app always gets a live endpoint.
+  let attempt = 0;
+  const bind = () => {
+    server.once('error', e => {
+      if (e && e.code === 'EADDRINUSE' && attempt < 20) {
+        attempt++;
+        console.log(`[ECC] :${PORT + attempt - 1} занят → пробую :${PORT + attempt}`);
+        setTimeout(bind, 150);
+        return;
+      }
+      console.error('[ECC] bind failed:', e && e.message);
+      // Last-ditch diagnostic for the native host (fs shim redirects this to the user data dir)
+      try {
+        const dir = path.dirname(process.execPath);
+        fs.writeFileSync(path.join(dir, 'engine-error.log'),
+          new Date().toISOString() + ' bind failed: ' + (e && e.message) + '\n', { flag: 'a' });
+      } catch { }
+      setInterval(() => { }, 1 << 30); // stay alive so the host can show diagnostics
+    });
+    server.listen(PORT + attempt, '0.0.0.0', () => {
+      const p2 = PORT + attempt;
+      console.log(`[ECC] Edge Control Center v${VERSION.version} on :${p2}`);
+      try {
+        const dir = path.dirname(process.execPath);
+        fs.writeFileSync(path.join(dir, 'port.txt'), String(p2));
+      } catch { }
+    });
+  };
+  bind();
 }
 module.exports = { server, plane };
