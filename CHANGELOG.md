@@ -31,3 +31,11 @@ Initial release of the **Edge Control Center** for the ARDOR GAMING Edge 3327 pl
   registration, staged-rollout updater with health-probe rollback, uninstallers.
 * **Docs** — DESIGN.md (full architecture & rollout plan), PROTOCOL.md (EBP/1.0),
   RELEASE_CHECKLIST.md.
+
+### Release artifacts (v1.0.0)
+* `dist/edge-control-center-1.0.0.zip` — portable source bundle (Node ≥ 18 required)
+* `dist/EdgeControlCenter-1.0.0-win64.zip` — **ready-to-run Windows EXE**: `EdgeControlCenter.exe`
+  (Node.js SEA, runtime 22.22.3 embedded, ~87 MB) + `app/` + stock `Cfg.ini` + RU README +
+  `Start-ECC.cmd` fallback launcher. Build recipe: `installer/build-exe.sh`; bootstrap loader:
+  `control-center/sea/sea-bootstrap.js`. Same-blob smoke-tested end-to-end (state/UI/config/auth/SSE)
+  on the identical Node version before injection.
