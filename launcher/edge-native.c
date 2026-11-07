@@ -251,12 +251,15 @@ static void StartEngine(void) {
   si.dwFlags = STARTF_USESTDHANDLES;
   si.hStdOutput = logh; si.hStdError = logh; si.hStdInput = NULL;
   memset(&pi, 0, sizeof pi);
-  /* env block: PORT=<freed port>, double-null terminated */
-  wchar_t env[64];
-  int eo = _snwprintf(env, 60, L"PORT=%d", g_port);
-  env[eo + 1] = 0;
+  /* IMPORTANT: inherit the FULL parent environment (SystemRoot, PATH, …).
+   * A hand-rolled env block containing only PORT makes Node's OpenSSL init
+   * crash at startup (node::InitializeOncePerProcess, AES frames in the log).
+   * We simply set PORT in our own environment and pass lpEnvironment = NULL. */
+  wchar_t pb[16];
+  _snwprintf(pb, 15, L"%d", g_port);
+  SetEnvironmentVariableW(L"PORT", pb);
   if (!CreateProcessW(g_enginePath, cmd, NULL, NULL, TRUE,
-                      CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, &si, &pi)) {
+                      CREATE_NO_WINDOW, NULL /* inherit environment */, cwd, &si, &pi)) {
     DWORD err = GetLastError();
     if (logh) CloseHandle(logh);
     g_engineDead = TRUE;
@@ -674,14 +677,15 @@ static void PaintContent(HDC dc) {
              g_engineDead ? L"✗ Движок не смог запуститься — диагностика ниже" : L"Запуск движка…",
              g_engineDead ? C_BAD : C_TEXT, g_fH2);
     TextOutF(dc, 60, 122, L"Это нативное приложение: интерфейс отрисован через Win32/GDI, без браузера.", C_MUT, g_fBody);
-    TextOutF(dc, 60, 146, L"Движок — встроенный в EXE сервер телеметрии (скрытый процесс).", C_MUT, g_fBody);
+    TextOutF(dc, 60, 146, L"Частая причина сбоя — SmartScreen/Defender блокирует неподписанный движок.", C_MUT, g_fBody);
+    TextOutF(dc, 60, 168, L"Добавь папку движка (кнопка ниже → «Открыть папку») в исключения Defender и нажми «Перезапустить».", C_MUT, g_fBody);
     /* engine output tail */
-    TextOutF(dc, 60, 186, L"Журнал движка (последние строки):", C_MUT, g_fSmall);
+    TextOutF(dc, 60, 206, L"Журнал движка (последние строки):", C_MUT, g_fSmall);
     wchar_t tail[2048];
     ReadLogTail(tail, 2047);
-    int y = 208;
+    int y = 228;
     wchar_t *ctx = NULL, *line = wcstok(tail, L"\n", &ctx);
-    while (line && y < 372) {
+    while (line && y < 396) {
       TextOutF(dc, 60, y, line, C_INFO, g_fMono);
       y += 20;
       line = wcstok(NULL, L"\n", &ctx);
@@ -872,7 +876,7 @@ static void PaintRail(HDC dc) {
     DrawTextW(dc, PAGEICONS[i], -1, &ik, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     TextOutF(dc, g_railR[i].left + 44, g_railR[i].top + 10, PAGENAMES[i], act ? C_TEXT : C_MUT, g_fRail);
   }
-  TextOutF(dc, 14, CH - 170, L"v2.1.1 «NATIVE»", C_MUT, g_fSmall);
+  TextOutF(dc, 14, CH - 170, L"v2.1.2 «NATIVE»", C_MUT, g_fSmall);
   TextOutF(dc, 14, CH - 150, L"нативный UI · Win32/GDI", C_MUT, g_fSmall);
   TextOutF(dc, 14, CH - 108, L"hasberd · ARDOR GAMING", C_MUT, g_fSmall);
   TextOutF(dc, 14, CH - 92, L"Edge 3327 suite", C_MUT, g_fSmall);
@@ -896,7 +900,9 @@ static void PaintStatusBar(HDC dc) {
   COLORREF cc = g_engineDead ? C_BAD : g_engineReady ? C_OK : C_ACC2;
   FillR(dc, 12, CH - STATUS_H / 2 - 3, 8, 8, cc);
   TextOutF(dc, 28, CH - STATUS_H + 5, g_status, C_MUT, g_fSmall);
-  TextOutF(dc, CW - 300, CH - STATUS_H + 5, L"движок: 127.0.0.1:3327 · скрытый процесс", C_MUT, g_fSmall);
+  wchar_t ep[64];
+  _snwprintf(ep, 63, L"движок: 127.0.0.1:%d · скрытый процесс", g_port);
+  TextOutF(dc, CW - 300, CH - STATUS_H + 5, ep, C_MUT, g_fSmall);
 }
 
 /* ================================================================ interactions */
@@ -1016,7 +1022,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     g_nid.cbSize = sizeof g_nid; g_nid.hWnd = h; g_nid.uID = 1;
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAY; g_nid.hIcon = g_hIcon;
-    lstrcpynW(g_nid.szTip, L"Edge Control Center — NATIVE v2.1.1", 128);
+    lstrcpynW(g_nid.szTip, L"Edge Control Center — NATIVE v2.1.2", 128);
     Shell_NotifyIconW(NIM_ADD, &g_nid);
     SetTimer(h, 1, 1000, NULL);
     return 0;
