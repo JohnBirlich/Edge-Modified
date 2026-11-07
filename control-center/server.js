@@ -340,6 +340,171 @@ route('POST', /^\/api\/admin\/snapshot$/, adminOnly(async (req, res) => {
   json(res, 200, { anchor, note: 'Windows: Checkpoint-Computer executed by installer/restore-point.ps1; Linux: timeshift/btrfs snapshot.' });
 }));
 
+/* ---- native Win32 app API (compact line protocol) ---- */
+route('GET', /^\/api\/native\/state$/, (req, res) => {
+  const t = lastTick || {};
+  const d = plane.summary();
+  const lodIdx = Math.max(0, ['low (1 mm)', 'medium (2 mm)', 'high (3 mm)'].indexOf(d.lod));
+  const lines = [
+    'ts=' + Date.now(),
+    'version=' + VERSION.version,
+    'cpu=' + (t.cpu ? (t.cpu.load * 100).toFixed(1) : '0'),
+    'cpuMhz=' + (t.cpu?.freqMhz ?? 0),
+    'cores=' + (t.cpu?.cores ?? 0),
+    'memPct=' + (t.mem?.totalBytes ? (t.mem.usedBytes / t.mem.totalBytes * 100).toFixed(1) : '0'),
+    'swapGiB=' + ((t.mem?.swapUsed || 0) / 2 ** 30).toFixed(2),
+    'wallW=' + (t.power?.wallW ?? 0),
+    'effPct=' + (t.power?.efficiencyPct ?? 0),
+    'loadPct=' + (t.power?.loadPct ?? 0),
+    'sweet=' + (t.power?.sweetSpot ? 1 : 0),
+    'epsW=' + (t.power?.rails?.eps12v_cpu?.w ?? 0),
+    'gpuW=' + (t.power?.rails?.pcie12v_gpu?.w ?? 0),
+    'cpuTemp=' + (t.thermal?.sensors?.cpu?.t ?? 0),
+    'gpuTemp=' + (t.thermal?.sensors?.gpu?.t ?? 0),
+    'riskPct=' + (t.thermal?.riskPct ?? 0),
+    'fanPwm=' + (t.thermal?.controller?.fanPwm ?? 0),
+    'class=' + (t.thermal?.controller?.class ?? 'idle'),
+    'tttCpu=' + (t.thermal?.timeToThrottleS?.cpu ?? -1),
+    'tttGpu=' + (t.thermal?.timeToThrottleS?.gpu ?? -1),
+    'rxKbps=' + ((t.net?.rxps || 0) / 1024).toFixed(1),
+    'txKbps=' + ((t.net?.txps || 0) / 1024).toFixed(1),
+    'debounce=' + d.debounce,
+    'lod=' + lodIdx,
+    'dpi=' + d.dpiStages.join('.'),
+    'unlocks=' + Object.entries(d.unlocks).map(([k, v]) => k + ':' + (v ? 1 : 0)).join('.'),
+    'pl1=' + (t.power?.limits?.pl1 ?? 125),
+    'pl2=' + (t.power?.limits?.pl2 ?? 188)
+  ];
+  const b = Buffer.from(lines.join('\n'));
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': b.length });
+  res.end(b);
+});
+/* Native action endpoint: POST body "key=value\n…" → response "key=value\n…" */
+route('POST', /^\/api\/native\/action$/, async (req, res) => {
+  const raw = await new Promise((resolve) => {
+    let d = ''; req.on('data', c => { d += c; if (d.length > 1e5) req.destroy(); });
+    req.on('end', () => resolve(d)); req.on('error', () => resolve(''));
+  });
+  const p = {};
+  for (const ln of raw.split('\n')) { const i = ln.indexOf('='); if (i > 0) p[ln.slice(0, i).trim()] = ln.slice(i + 1).trim(); }
+  const out = { ok: '0' };
+  try {
+    const admin = () => {
+      const s = auth.checkToken(p.token);
+      if (!s) throw new Error('admin session required');
+      return s;
+    };
+    switch ((p.op || '').toLowerCase()) {
+      case 'login': {
+        const r = auth.login(p.user || '', p.pass || '');
+        if (!r) { out.error = 'invalid credentials'; break; }
+        Object.assign(out, { ok: '1', token: r.token, user: r.user, mustRotate: r.mustRotate ? '1' : '0' });
+        break;
+      }
+      case 'unlock': {
+        admin();
+        const s = plane.unlock(p.id, p.on === '1' || p.on === 'true');
+        out.ok = '1'; out.unlocks = Object.entries(s.unlocks).map(([k, v]) => k + ':' + (v ? 1 : 0)).join('.');
+        break;
+      }
+      case 'key': {
+        admin();
+        plane.setKey(p.section, p.key, p.value);
+        out.ok = '1';
+        break;
+      }
+      case 'profile': {
+        admin(); plane.applyProfile(p.id); out.ok = '1';
+        break;
+      }
+      case 'export': {
+        admin();
+        const f = plane.exportCfg();
+        out.ok = '1'; out.file = require('path').basename(f);
+        break;
+      }
+      case 'pl': {
+        admin();
+        const r = tel.setPowerLimits(Number(p.pl1), Number(p.pl2));
+        auth.audit('power.limit', JSON.stringify(r), true);
+        Object.assign(out, { ok: '1', pl1: String(r.pl1), pl2: String(r.pl2) });
+        break;
+      }
+      case 'thermal': {
+        admin();
+        if (p.mode && ['adaptive', 'acoustic', 'manual'].includes(p.mode)) tel.THERMAL.fanMode = p.mode;
+        if (p.dba) tel.THERMAL.acousticTargetDba = Math.max(20, Math.min(45, +p.dba));
+        if (p.cpuCeil) tel.THERMAL.ceilings.cpu = Math.max(60, Math.min(110, +p.cpuCeil));
+        if (p.gpuCeil) tel.THERMAL.ceilings.gpu = Math.max(60, Math.min(110, +p.gpuCeil));
+        auth.audit('thermal.policy', JSON.stringify({ mode: tel.THERMAL.fanMode, ceilings: tel.THERMAL.ceilings }), true);
+        out.ok = '1'; out.mode = tel.THERMAL.fanMode;
+        break;
+      }
+      case 'ping': {
+        const r = await nettools.ping(String(p.host || '1.1.1.1').slice(0, 120), 4);
+        if (r.avg === null) { out.error = 'probe failed'; break; }
+        Object.assign(out, { ok: '1', avg: String(r.avg), loss: String(r.lossPct), jitter: String(r.jitter) });
+        break;
+      }
+      case 'dns': {
+        const r = await nettools.dnsMatrix(String(p.host || 'example.com').slice(0, 120));
+        out.ok = '1';
+        out.rows = r.rows.map(x => `${x.resolver}=${x.ok ? Math.round(x.ms) + 'ms' : 'fail'}`).join('|');
+        out.fastest = r.fastest ? r.fastest.resolver : '';
+        break;
+      }
+      case 'analyze': {
+        const r = stab.analyze(String(p.input || '').slice(0, 100000));
+        const m = r.matched[0] || {};
+        Object.assign(out, {
+          ok: '1', code: m.code || '-', name: m.name || 'Unclassified',
+          causes: (m.causes || []).join(' | ').slice(0, 900),
+          actions: (m.actions || []).join(' | ').slice(0, 900)
+        });
+        break;
+      }
+      case 'ai': {
+        const j = ai.submitJob({ prompt: (p.prompt || '').slice(0, 1500), steps: Math.max(1, Math.min(60, +p.steps || 28)), cfg: 7, size: ['512x512', '768x768', '1024x1024'].includes(p.size) ? p.size : '768x768', seed: p.seed ? +p.seed : null });
+        out.ok = '1'; out.jobId = j.id; out.backend = j.backend;
+        break;
+      }
+      case 'aistatus': {
+        const j = ai.job(p.jobId || '');
+        if (!j) { out.error = 'no such job'; break; }
+        Object.assign(out, { ok: '1', status: j.status, progress: String(j.progress), backend: j.backend, file: j.file ? require('path').basename(j.file) : '' });
+        break;
+      }
+      case 'audit': {
+        admin();
+        const log = auth.auditLog().slice(0, 40);
+        out.ok = '1'; out.n = String(log.length);
+        log.forEach((a, i) => { out['l' + i] = `${new Date(a.ts).toISOString().slice(11, 19)}|${a.privileged ? 'PRIV' : '    '}|${a.action}|${String(a.detail).slice(0, 80)}`; });
+        break;
+      }
+      case 'snapshot': {
+        admin();
+        const anchor = { ts: Date.now(), kind: 'ecc-native', note: 'Anchor from native app' };
+        try {
+          fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
+          fs.writeFileSync(path.join(__dirname, 'data', 'snapshot.json'), JSON.stringify(anchor, null, 2));
+        } catch { }
+        state.snapshotAnchor = anchor;
+        auth.audit('snapshot.create', 'native', true);
+        out.ok = '1';
+        break;
+      }
+      case 'logout': {
+        auth.logout(p.token); out.ok = '1';
+        break;
+      }
+      default: out.error = 'unknown op';
+    }
+  } catch (e) { out.ok = '0'; out.error = String(e.message || e); }
+  const b = Buffer.from(Object.entries(out).map(([k, v]) => `${k}=${v}`).join('\n'));
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': b.length });
+  res.end(b);
+});
+
 /* ---- static + fallback ---- */
 route('GET', /^\/$/, (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
