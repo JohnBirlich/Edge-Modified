@@ -32,10 +32,19 @@ Initial release of the **Edge Control Center** for the ARDOR GAMING Edge 3327 pl
 * **Docs** — DESIGN.md (full architecture & rollout plan), PROTOCOL.md (EBP/1.0),
   RELEASE_CHECKLIST.md.
 
-### Release artifacts (v1.0.0)
+### Release artifacts (v1.0.0, updated)
 * `dist/edge-control-center-1.0.0.zip` — portable source bundle (Node ≥ 18 required)
 * `dist/EdgeControlCenter-1.0.0-win64.zip` — **ready-to-run Windows EXE**: `EdgeControlCenter.exe`
   (Node.js SEA, runtime 22.22.3 embedded, ~87 MB) + `app/` + stock `Cfg.ini` + RU README +
   `Start-ECC.cmd` fallback launcher. Build recipe: `installer/build-exe.sh`; bootstrap loader:
   `control-center/sea/sea-bootstrap.js`. Same-blob smoke-tested end-to-end (state/UI/config/auth/SSE)
   on the identical Node version before injection.
+
+### v1.0.0-r2 — native desktop APP (Windows)
+* **`dist/EdgeControlCenter-1.0.0-win64-APP.zip`** — полноценное оконное приложение:
+  `EdgeControlCenterApp.exe` — нативный Win32 GUI-лаунчер (тёмное окно, иконка ARDOR, трей,
+  без консоли; скомпилирован `zig cc` из `launcher/edge-launcher.c`, иконка/версия — `resedit`)
+  + скрытый движок `ecc-engine.exe` (Node SEA) + панель в отдельном окне приложения
+  (Edge/Chrome `--app`, фолбэки: chrome → браузер по умолчанию).
+* Portable-архив предыдущего формата заменён APP-бандлом; `Start-ECC.cmd` сохранён как fallback.
+* Сборка воспроизводится: `installer/build-app.sh`.
