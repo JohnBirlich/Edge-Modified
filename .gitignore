@@ -5,3 +5,4 @@ profiles/Edge3327_*.ini
 node_modules/
 *.log
 /var/tmp/
+launcher/*.pdb
